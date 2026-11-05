@@ -2,10 +2,15 @@
 
 - ``MockProducer``: scripted captions on the event loop — verifies the whole
   server/transport without audio or ASR deps.
-- ``LiveStreamer``: real pipeline — sounddevice capture in a worker thread,
-  energy VAD endpointing, faster-whisper transcription, published to the hub.
+- ``LiveStreamer``: real pipeline for utterance engines (faster-whisper, MLX) —
+  sounddevice capture in a worker thread, energy VAD endpointing, re-decoding
+  the growing utterance for partials, published to the hub.
+- ``ContinuousStreamer``: real pipeline for streaming engines (sherpa-onnx) —
+  every audio chunk goes straight to the engine, which emits partials as words
+  arrive and decides its own endpoints.
 
-Both honor the ``Controller`` protocol the server's control channel drives.
+All honor the ``Controller`` protocol the server's control channel drives;
+``make_streamer`` picks the right live one for an engine.
 """
 
 from __future__ import annotations
@@ -13,9 +18,9 @@ from __future__ import annotations
 import asyncio
 import threading
 import uuid
-from typing import Any, Optional, Protocol
+from typing import Any, Optional, Protocol, Union
 
-from .engines.base import ASREngine
+from .engines.base import ASREngine, StreamingASREngine
 from .hub import CaptionHub
 from .protocol import CaptionSegment, EngineStatus
 from .vad import EnergyVAD
@@ -91,45 +96,43 @@ class MockProducer:
 # ---------------------------------------------------------------------------
 
 
-class LiveStreamer:
+class _MicCapture:
+    """Mic capture shared by the live streamers.
+
+    sounddevice delivers blocks on its own thread into a bounded queue; a worker
+    thread drains it into ``_on_frame``. Subclasses load their engine in
+    ``_load`` and may finish open work in ``_on_stopped``.
+    """
+
     def __init__(
         self,
         hub: CaptionHub,
-        engine: ASREngine,
         sample_rate: int = 16000,
         block_ms: int = 32,
         device: Optional[int] = None,
     ) -> None:
         self.hub = hub
-        self.engine = engine
         self.sample_rate = sample_rate
         self.block = int(sample_rate * block_ms / 1000)
         self.device = device
         self.dictionary: list[str] = []
 
-        self._vad = EnergyVAD(sample_rate)
         self._stream: Any = None
         self._worker: Optional[threading.Thread] = None
         self._running = threading.Event()
         self._frames: "Any" = None  # queue.Queue, set on start
 
-        # utterance state
-        self._sample_count = 0
-        self._preroll: list[Any] = []
-        self._preroll_n = 0
-        self._utter: list[Any] = []
-        self._utter_n = 0
-        self._utter_start = 0
-        self._in_utter = False
-        self._current_id = ""
-        self._since_partial = 0
-
-        self._preroll_cap = int(sample_rate * 0.25)
-        self._partial_every = int(sample_rate * 0.7)
-        self._max_utter = int(sample_rate * 14)
-
     def set_dictionary(self, terms: list[str]) -> None:
         self.dictionary = terms
+
+    def _load(self) -> EngineStatus:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _on_frame(self, frame: Any) -> None:  # pragma: no cover - overridden
+        raise NotImplementedError
+
+    def _on_stopped(self) -> None:
+        pass
 
     def start(self) -> None:
         import queue
@@ -137,7 +140,7 @@ class LiveStreamer:
         import numpy as np  # noqa: F401  (ensures numpy present before capture)
         import sounddevice as sd
 
-        status = self.engine.load()
+        status = self._load()
         self.hub.emit_status(status)
         if status.state == "error":
             return
@@ -173,6 +176,7 @@ class LiveStreamer:
         if self._worker:
             self._worker.join(timeout=2.0)
             self._worker = None
+        self._on_stopped()
         self.hub.emit_status(EngineStatus(state="idle"))
 
     def _run(self) -> None:
@@ -184,6 +188,40 @@ class LiveStreamer:
             except queue.Empty:
                 continue
             self._on_frame(frame)
+
+
+class LiveStreamer(_MicCapture):
+    """Utterance engines: VAD endpointing + periodic re-decode for partials."""
+
+    def __init__(
+        self,
+        hub: CaptionHub,
+        engine: ASREngine,
+        sample_rate: int = 16000,
+        block_ms: int = 32,
+        device: Optional[int] = None,
+    ) -> None:
+        super().__init__(hub, sample_rate=sample_rate, block_ms=block_ms, device=device)
+        self.engine = engine
+        self._vad = EnergyVAD(sample_rate)
+
+        # utterance state
+        self._sample_count = 0
+        self._preroll: list[Any] = []
+        self._preroll_n = 0
+        self._utter: list[Any] = []
+        self._utter_n = 0
+        self._utter_start = 0
+        self._in_utter = False
+        self._current_id = ""
+        self._since_partial = 0
+
+        self._preroll_cap = int(sample_rate * 0.25)
+        self._partial_every = int(sample_rate * 0.7)
+        self._max_utter = int(sample_rate * 14)
+
+    def _load(self) -> EngineStatus:
+        return self.engine.load()
 
     def _on_frame(self, frame: Any) -> None:
         self._sample_count += len(frame)
@@ -254,3 +292,84 @@ class LiveStreamer:
             self.hub.emit_final(seg)
         else:
             self.hub.emit_partial(seg)
+
+
+class ContinuousStreamer(_MicCapture):
+    """Streaming engines: feed every chunk; the engine emits text + endpoints.
+
+    A segment opens when the engine first produces text and closes on the
+    engine's endpoint (or on stop). Partials are only emitted when the text
+    changes. Dictionary edits apply from the next segment (via ``reset``).
+    """
+
+    def __init__(
+        self,
+        hub: CaptionHub,
+        engine: StreamingASREngine,
+        sample_rate: int = 16000,
+        block_ms: int = 32,
+        device: Optional[int] = None,
+    ) -> None:
+        super().__init__(hub, sample_rate=sample_rate, block_ms=block_ms, device=device)
+        self.engine = engine
+        self._sample_count = 0
+        self._seg_id = ""
+        self._seg_start = 0.0
+        self._last_text = ""
+
+    def _load(self) -> EngineStatus:
+        status = self.engine.load()
+        if status.state != "error":
+            self.engine.reset(self.dictionary)
+        return status
+
+    def _now(self) -> float:
+        return self._sample_count / self.sample_rate
+
+    def _on_frame(self, frame: Any) -> None:
+        start_of_chunk = self._now()
+        self._sample_count += len(frame)
+        result = self.engine.accept(frame)
+        text = result.text
+
+        if text and not self._seg_id:
+            # Text first appeared somewhere in this chunk (or the engine's
+            # lookahead before it); the chunk start is a fair estimate.
+            self._seg_id = uuid.uuid4().hex
+            self._seg_start = start_of_chunk
+
+        if text and text != self._last_text:
+            self._last_text = text
+            self.hub.emit_partial(self._segment(text))
+
+        if result.endpoint:
+            self._finalize(text)
+            self.engine.reset(self.dictionary)
+
+    def _finalize(self, text: str) -> None:
+        if text and self._seg_id:
+            self.hub.emit_final(self._segment(text))
+        self._seg_id = ""
+        self._last_text = ""
+
+    def _segment(self, text: str) -> CaptionSegment:
+        end = max(self._now(), self._seg_start)
+        return CaptionSegment(id=self._seg_id, text=text, start=self._seg_start, end=end)
+
+    def _on_stopped(self) -> None:
+        text = self.engine.flush()
+        if text and not self._seg_id:
+            self._seg_id = uuid.uuid4().hex
+            self._seg_start = self._now()
+        self._finalize(text)
+
+
+def make_streamer(
+    hub: CaptionHub,
+    engine: Union[ASREngine, StreamingASREngine],
+    device: Optional[int] = None,
+) -> Union[LiveStreamer, ContinuousStreamer]:
+    """Pick the live pipeline that matches the engine's shape."""
+    if isinstance(engine, StreamingASREngine):
+        return ContinuousStreamer(hub, engine, device=device)
+    return LiveStreamer(hub, engine, device=device)

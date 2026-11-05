@@ -18,14 +18,43 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     serve = sub.add_parser("serve", help="run the caption server + display")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
-    serve.add_argument("--model", default="base.en", help="model name or HF repo")
+    serve.add_argument(
+        "--model",
+        default=None,
+        help=(
+            "model name, HF repo or model dir (default: base.en for Whisper "
+            "engines, nemotron-en-560ms for sherpa-onnx)"
+        ),
+    )
     serve.add_argument(
         "--engine",
         default="auto",
-        choices=["auto", "faster-whisper", "mlx"],
-        help="ASR backend (auto: MLX on Apple Silicon, else faster-whisper)",
+        choices=["auto", "faster-whisper", "mlx", "sherpa-onnx"],
+        help=(
+            "ASR backend (auto: MLX on Apple Silicon, else faster-whisper; "
+            "sherpa-onnx: true streaming, Nemotron by default)"
+        ),
     )
-    serve.add_argument("--device", default="auto", help="auto|cpu|cuda (faster-whisper)")
+    serve.add_argument(
+        "--device", default="auto", help="auto|cpu|cuda (faster-whisper, sherpa-onnx)"
+    )
+
+    # sherpa-onnx streaming options
+    serve.add_argument(
+        "--decoding",
+        default="auto",
+        choices=["auto", "beam", "greedy"],
+        help="sherpa-onnx: beam (needed for --dictionary) or greedy (fastest)",
+    )
+    serve.add_argument(
+        "--hotwords-score",
+        type=float,
+        default=1.5,
+        help="sherpa-onnx: dictionary boost per token (try 1.5-3; too high garbles)",
+    )
+    serve.add_argument(
+        "--threads", type=int, default=4, help="sherpa-onnx: CPU inference threads"
+    )
     serve.add_argument("--mic", type=int, default=None, help="input device index")
     serve.add_argument("--demo", action="store_true", help="mock captions, no audio/ASR")
     serve.add_argument("--web", default=None, help="path to built frontend dir")
@@ -55,7 +84,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 def _serve(args: argparse.Namespace) -> None:
     from .server import build_app
-    from .streaming import LiveStreamer, MockProducer
+    from .streaming import MockProducer, make_streamer
     from . import window
 
     if args.list_monitors:
@@ -77,13 +106,27 @@ def _serve(args: argparse.Namespace) -> None:
     else:
         from .engines import create_engine
 
-        engine = create_engine(args.engine, model=args.model, device=args.device)
-        controller = LiveStreamer(hub, engine, device=args.mic)
-        engine_desc = f"{engine.__class__.__name__} ({args.model})"
+        options = {}
+        if args.engine == "sherpa-onnx":
+            options = dict(
+                decoding=args.decoding,
+                hotwords_score=args.hotwords_score,
+                num_threads=args.threads,
+            )
+        engine = create_engine(
+            args.engine, model=args.model, device=args.device, **options
+        )
+        controller = make_streamer(hub, engine, device=args.mic)
+        model_name = getattr(engine, "model_name", args.model)
+        engine_desc = f"{engine.__class__.__name__} ({model_name})"
 
     terms = _parse_dictionary(args.dictionary)
     if terms:
         controller.set_dictionary(terms)
+        if getattr(controller, "engine", None) is not None and not getattr(
+            controller.engine, "supports_hotwords", True
+        ):
+            print("  note: --decoding greedy ignores the dictionary; use beam")
 
     web_dir = find_web_dir(args.web)
     app = build_app(hub, controller, web_dir=web_dir)

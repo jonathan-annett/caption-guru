@@ -74,6 +74,42 @@ stream over `/ws`; the history/scrollback substrate is at `/history`.
 > pywebview is needed for the fullscreen window (`pip install -e ".[desktop]"`).
 > Without it, `serve` automatically falls back to Chrome kiosk.
 
+## Streaming engine (sherpa-onnx + Nemotron)
+
+`--engine sherpa-onnx` runs a **true streaming** model, by default NVIDIA's
+[Nemotron Speech Streaming EN 0.6B](https://k2-fsa.github.io/sherpa/onnx/nemo/nemotron-streaming.html)
+via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). The Whisper engines
+wait for a pause, then re-decode the whole utterance; this one keeps decoder
+state, so words appear **as they're spoken**, and it detects its own endpoints.
+Output includes punctuation and capitalization.
+
+```bash
+pip install -e ".[server,audio,streaming,desktop]"
+captions serve --engine sherpa-onnx                       # nemotron-en-560ms, auto-downloaded
+captions serve --engine sherpa-onnx --model nemotron-en-160ms   # lower latency
+captions serve --engine sherpa-onnx --model /path/to/model-dir  # any streaming transducer
+captions serve --engine sherpa-onnx --dictionary "@terms.txt" --hotwords-score 2.0
+```
+
+- **Models.** Short names `nemotron-en-80ms`, `-160ms`, `-560ms` (default) and
+  `-1120ms` select the chunk size: smaller is lower latency, larger is more
+  accurate. Each is a ~460 MB one-time download into
+  `~/.cache/caption-guru/models` (override with `CAPTION_GURU_MODELS`). A path
+  to a directory with `encoder*.onnx`, `decoder*.onnx`, `joiner*.onnx` and
+  `tokens.txt` also works.
+- **Dictionary / hotwords.** Needs the default beam decoding (`--decoding auto`).
+  Write terms in their **natural case** ("Steve Gibson"): the model's vocabulary
+  is mixed case, and upper-casing them, as older sherpa docs suggest, makes the
+  model emit upper-case garbage. Start `--hotwords-score` around 1.5–3; too high
+  forces the terms in everywhere. Edits from the control page apply from the
+  next caption segment, no model reload. `--decoding greedy` is fastest but
+  ignores the dictionary.
+- **CPU vs GPU.** The PyPI `sherpa-onnx` wheel is CPU-only; use `--threads` to
+  tune. For an NVIDIA GPU, install sherpa-onnx's CUDA build (see its install
+  docs) and pass `--device cuda`.
+- **Tests.** The unit tests run without the model. To also run the real-model
+  check: `CAPTION_GURU_SHERPA_MODEL=/path/to/model-dir pytest -k real`.
+
 ## Packaging / releases
 
 Bundled with PyInstaller into a one-folder app, zipped per platform. `torch` is

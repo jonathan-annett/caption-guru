@@ -4,6 +4,18 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
 
 ## Unreleased
 
+**Desktop — true streaming engine**
+- New **`--engine sherpa-onnx`**: streaming ASR via sherpa-onnx, defaulting to
+  NVIDIA **Nemotron Speech Streaming EN 0.6B**. Words appear as they're spoken
+  instead of after a pause, with built-in endpointing, punctuation and
+  capitalization. Models auto-download by short name (`nemotron-en-80ms` …
+  `-1120ms`) or load from a directory.
+- **Dictionary works as hotwords** (beam decoding), applied per segment so live
+  edits take effect without a reload. A `bpe.vocab` is generated from the model's
+  tokens, since the Nemotron archives don't ship one.
+- New `StreamingASREngine` interface and `ContinuousStreamer` pipeline alongside
+  the existing utterance engines; the Whisper path is unchanged.
+
 **PWA — caption quality**
 - **Hallucination suppression.** Whisper used to invent text on silence/non-speech
   (repeated symbols like `>>>>`/`[`, or phantom phrases like "I'm sorry"). Now a

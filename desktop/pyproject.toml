@@ -29,6 +29,12 @@ audio = [
 asr = [
   "faster-whisper>=1.0.3",
 ]
+# True streaming ASR (Nemotron via sherpa-onnx). CPU wheels on PyPI; for NVIDIA
+# GPUs install sherpa-onnx's CUDA build instead and run with --device cuda.
+streaming = [
+  "sherpa-onnx>=2.0",
+  "numpy>=1.26",
+]
 # Apple-Silicon GPU backend (macOS arm64 only).
 mlx = [
   "mlx-whisper>=0.4; sys_platform == 'darwin' and platform_machine == 'arm64'",
