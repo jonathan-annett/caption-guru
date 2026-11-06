@@ -46,15 +46,30 @@ function Step($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan
 function Info($msg) { Write-Host "    $msg" }
 function Warn($msg) { Write-Host "    ! $msg" -ForegroundColor Yellow }
 
+# Windows 10 (1803+) and 11 ship curl.exe. Call it by full path: in Windows
+# PowerShell, plain "curl" is an alias for Invoke-WebRequest.
+$CurlExe = Join-Path $env:SystemRoot 'System32\curl.exe'
+if (-not (Test-Path $CurlExe)) { $CurlExe = $null }
+
 function Download($url, $out) {
     Info "downloading $url"
     $tmp = "$out.part"
+    if (Test-Path $tmp) { Remove-Item -Force $tmp }
     for ($i = 1; $i -le 3; $i++) {
         try {
-            Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'caption-guru-installer' }
+            if ($CurlExe) {
+                # Progress bar, and give up on a stalled connection (under
+                # 1 KB/s for 45 s) instead of hanging; then retry.
+                & $CurlExe -fL --retry 2 --connect-timeout 20 --speed-limit 1000 --speed-time 45 `
+                    -A caption-guru-installer -# -o $tmp $url
+                if ($LASTEXITCODE -ne 0) { throw "curl exited with code $LASTEXITCODE" }
+            } else {
+                Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -Headers @{ 'User-Agent' = 'caption-guru-installer' }
+            }
             Move-Item -Force $tmp $out
             return
         } catch {
+            if (Test-Path $tmp) { Remove-Item -Force $tmp }
             if ($i -eq 3) { throw "Download failed: $url`n$($_.Exception.Message)" }
             Warn "retrying ($i)..."
             Start-Sleep -Seconds (2 * $i)
