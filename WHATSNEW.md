@@ -4,6 +4,32 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
 
 ## Unreleased
 
+**Desktop — true streaming engine**
+- New **`--engine sherpa-onnx`**: streaming ASR via sherpa-onnx, defaulting to
+  NVIDIA **Nemotron Speech Streaming EN 0.6B**. Words appear as they're spoken
+  instead of after a pause, with built-in endpointing, punctuation and
+  capitalization. Models auto-download by short name (`nemotron-en-80ms` …
+  `-1120ms`) or load from a directory.
+- **Dictionary works as hotwords** (beam decoding), applied per segment so live
+  edits take effect without a reload. A `bpe.vocab` is generated from the model's
+  tokens, since the Nemotron archives don't ship one.
+- New `StreamingASREngine` interface and `ContinuousStreamer` pipeline alongside
+  the existing utterance engines; the Whisper path is unchanged.
+
+**Desktop — settings page**
+- A **Settings window** opens alongside the captions (also at `/control.html`):
+  position, alignment, edge/side margins, lines, size, font, colour, background,
+  with a live preview of the real output; start/stop/clear, custom words,
+  export; and switch microphone, engine or model without restarting the app.
+- Settings are **saved** and reused next launch (CLI flags still override).
+- Display config gains `marginX` / `marginY` safe-area insets (defaults match the
+  old fixed padding).
+
+**Windows installer**
+- `desktop/packaging/windows/install.cmd` installs everything from scratch
+  (Python, Node, the app) for any branch or tag, so beta testers can try
+  unreleased branches. Adds Start Menu / Desktop shortcuts and an uninstaller.
+
 **PWA — caption quality**
 - **Hallucination suppression.** Whisper used to invent text on silence/non-speech
   (repeated symbols like `>>>>`/`[`, or phantom phrases like "I'm sorry"). Now a

@@ -1,0 +1,39 @@
+name: windows installer
+
+# Publishes the Windows setup to a fixed "installer" release, so testers always
+# find it at .../releases/tag/installer (and the direct download link below
+# never changes). The installer itself picks the branch/tag to install, so one
+# copy serves every branch.
+#   https://github.com/<owner>/<repo>/releases/download/installer/CaptionGuru-Setup.cmd
+
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/packaging/windows/**", ".github/workflows/installer.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build single-file setup
+        run: |
+          python3 desktop/packaging/windows/build_setup.py dist/CaptionGuru-Setup.cmd
+          cp desktop/packaging/windows/install.ps1 desktop/packaging/windows/install.cmd dist/
+
+      - name: Publish to the "installer" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view installer >/dev/null 2>&1; then
+            gh release create installer --title "Windows installer" --latest=false \
+              --target "$GITHUB_SHA" --notes-file desktop/packaging/windows/RELEASE_NOTES.md
+          else
+            gh release edit installer --notes-file desktop/packaging/windows/RELEASE_NOTES.md
+          fi
+          gh release upload installer dist/CaptionGuru-Setup.cmd dist/install.ps1 dist/install.cmd --clobber

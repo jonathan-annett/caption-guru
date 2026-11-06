@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from .protocol import (
     CaptionSegment,
@@ -37,6 +37,9 @@ class CaptionHub:
         self._subscribers: set[asyncio.Queue[ServerMessage]] = set()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._start = time.monotonic()
+        self.last_status: Optional[StatusMessage] = None
+        # Called with the new DisplayConfig after every change (persistence).
+        self.on_config: Optional[Callable[[DisplayConfig], None]] = None
 
     def bind_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -78,6 +81,8 @@ class CaptionHub:
             self._prune()
         elif isinstance(msg, ClearMessage):
             self._finals.clear()
+        elif isinstance(msg, StatusMessage):
+            self.last_status = msg
 
         for q in list(self._subscribers):
             try:
@@ -102,6 +107,15 @@ class CaptionHub:
         merged.update(patch)
         self.config = DisplayConfig.model_validate(merged)
         self.submit(ConfigMessage(config=self.config))
+        if self.on_config is not None:
+            self.on_config(self.config)
+        return self.config
+
+    def reset_config(self) -> DisplayConfig:
+        self.config = DEFAULT_DISPLAY_CONFIG.model_copy(deep=True)
+        self.submit(ConfigMessage(config=self.config))
+        if self.on_config is not None:
+            self.on_config(self.config)
         return self.config
 
     def clear(self) -> None:
@@ -120,7 +134,10 @@ class CaptionHub:
 
     def snapshot_for_new_client(self) -> list[ServerMessage]:
         """Messages a freshly connected client should receive to catch up."""
-        return [
+        msgs: list[ServerMessage] = [
             ConfigMessage(config=self.config),
             HistoryMessage(segments=list(self._finals)),
         ]
+        if self.last_status is not None:
+            msgs.append(self.last_status)
+        return msgs

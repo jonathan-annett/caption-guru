@@ -41,6 +41,7 @@
   style:--cap-size="{store.config.fontSize}vh"
   style:--cap-align={store.config.textAlign}
   style:--cap-transform={store.config.uppercase ? "uppercase" : "none"}
+  style:padding="{store.config.marginY}vh {store.config.marginX}vw"
 >
   <div class="captions">
     {#each store.lines as line (line.key)}
@@ -56,7 +57,7 @@
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
-    padding: 4vh 6vw;
+    /* padding comes from config (marginY / marginX safe-area insets) */
   }
   .captions {
     width: 100%;

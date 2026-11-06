@@ -11,6 +11,11 @@ The on-air surface is a **fullscreen web page** designed to feed a vision switch
 
 A **v2 audience layer** (in progress) lets people follow the live captions on their own phones — the operator starts a room and shares a link or on-screen QR, with scroll-back over the recent transcript.
 
+**Windows desktop app:** download
+[`CaptionGuru-Setup.cmd`](https://github.com/jonathan-annett/caption-guru/releases/download/installer/CaptionGuru-Setup.cmd)
+and double-click it. It installs everything from scratch and lets you pick a
+branch to beta test ([details](https://github.com/jonathan-annett/caption-guru/releases/tag/installer)).
+
 ## Repository layout
 
 ```
