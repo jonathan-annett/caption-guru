@@ -118,6 +118,24 @@ _CHROME_CANDIDATES = [
     "chromium-browser",
     "microsoft-edge",
     "brave-browser",
+    # Windows: rarely on PATH, so check the usual install locations. Edge ships
+    # with Windows 10/11, so there's always a kiosk-capable browser.
+    *[
+        os.path.join(root, *rel)
+        for root in filter(
+            None,
+            (
+                os.environ.get("PROGRAMFILES"),
+                os.environ.get("PROGRAMFILES(X86)"),
+                os.environ.get("LOCALAPPDATA"),
+            ),
+        )
+        for rel in (
+            ("Google", "Chrome", "Application", "chrome.exe"),
+            ("Microsoft", "Edge", "Application", "msedge.exe"),
+            ("BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+        )
+    ],
 ]
 
 

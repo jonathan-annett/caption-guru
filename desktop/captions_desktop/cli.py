@@ -204,7 +204,13 @@ def _serve(args: argparse.Namespace) -> None:
                 print("  (pywebview not installed — using Chrome kiosk)")
             proc = window.launch_chrome_kiosk(url, monitor=monitor)
             if proc is None:
-                print("  No Chrome found. Open the display URL manually.")
+                # No Chromium-family browser: show the captions in the default
+                # browser instead (any browser renders the display page).
+                import webbrowser
+
+                print("  No Chrome/Chromium/Edge found: opening the captions in your")
+                print("  default browser instead. Press F11 there for full screen.")
+                webbrowser.open(url)
             if not args.no_settings_window:
                 import webbrowser
 
