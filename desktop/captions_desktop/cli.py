@@ -7,7 +7,10 @@ import threading
 import time
 from typing import Optional, Sequence
 
+from pathlib import Path
+
 from .hub import CaptionHub
+from .settings import Settings
 from .web import find_web_dir
 
 
@@ -28,11 +31,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     serve.add_argument(
         "--engine",
-        default="auto",
+        default=None,
         choices=["auto", "faster-whisper", "mlx", "sherpa-onnx"],
         help=(
             "ASR backend (auto: MLX on Apple Silicon, else faster-whisper; "
-            "sherpa-onnx: true streaming, Nemotron by default)"
+            "sherpa-onnx: true streaming, Nemotron by default). Default: the "
+            "last one chosen on the settings page, else auto"
         ),
     )
     serve.add_argument(
@@ -65,11 +69,26 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
 
     # Display output
-    serve.add_argument("--monitor", type=int, default=0, help="monitor index (HDMI out)")
+    serve.add_argument(
+        "--monitor", type=int, default=None, help="monitor index (HDMI out; default: saved, else 0)"
+    )
     serve.add_argument("--windowed", action="store_true", help="don't go fullscreen")
     serve.add_argument("--kiosk", action="store_true", help="use Chrome kiosk fallback")
     serve.add_argument("--no-open", action="store_true", help="server only, no window")
     serve.add_argument("--list-monitors", action="store_true", help="list monitors + exit")
+    serve.add_argument(
+        "--no-settings-window",
+        action="store_true",
+        help="don't open the settings window alongside the display",
+    )
+    serve.add_argument(
+        "--settings",
+        default=None,
+        help="settings file (default: per-user config dir; see /control.html)",
+    )
+    serve.add_argument(
+        "--fresh", action="store_true", help="ignore saved settings for this run"
+    )
 
     # Background (painted by the page; default solid black suits HDMI capture)
     serve.add_argument(
@@ -84,6 +103,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 def _serve(args: argparse.Namespace) -> None:
     from .server import build_app
+    from .control import EngineManager
     from .streaming import MockProducer, make_streamer
     from . import window
 
@@ -97,48 +117,65 @@ def _serve(args: argparse.Namespace) -> None:
             )
         return
 
-    hub = CaptionHub()
-    _apply_background(hub, args)
+    settings = Settings(Path(args.settings) if args.settings else None)
+    if args.fresh:
+        settings.data = {}
+    launch = settings.launch
 
-    if args.demo:
-        controller = MockProducer(hub)
-        engine_desc = "mock (demo)"
-    else:
+    hub = CaptionHub()
+    if settings.display:
+        try:
+            hub.set_config(settings.display)
+        except Exception as exc:
+            print(f"  settings: ignoring saved display settings ({exc})")
+    _apply_background(hub, args)  # CLI flags override saved settings for this run
+
+    options = _resolve_launch_options(args, launch)
+
+    def build(opts: dict):
+        if args.demo:
+            return MockProducer(hub)
         from .engines import create_engine
 
-        options = {}
-        if args.engine == "sherpa-onnx":
-            options = dict(
+        extra = {}
+        if opts["engine"] == "sherpa-onnx":
+            extra = dict(
                 decoding=args.decoding,
                 hotwords_score=args.hotwords_score,
                 num_threads=args.threads,
             )
         engine = create_engine(
-            args.engine, model=args.model, device=args.device, **options
+            opts["engine"], model=opts.get("model"), device=args.device, **extra
         )
-        controller = make_streamer(hub, engine, device=args.mic)
-        model_name = getattr(engine, "model_name", args.model)
-        engine_desc = f"{engine.__class__.__name__} ({model_name})"
+        if args.decoding == "greedy" and opts["engine"] == "sherpa-onnx":
+            print("  note: --decoding greedy ignores the dictionary; use beam")
+        return make_streamer(hub, engine, device=opts.get("mic"))
 
-    terms = _parse_dictionary(args.dictionary)
+    controller = EngineManager(hub, build, options, demo=args.demo)
+    terms = _parse_dictionary(args.dictionary) if args.dictionary else settings.dictionary
     if terms:
         controller.set_dictionary(terms)
-        if getattr(controller, "engine", None) is not None and not getattr(
-            controller.engine, "supports_hotwords", True
-        ):
-            print("  note: --decoding greedy ignores the dictionary; use beam")
+
+    screens = window.list_screens()
+    monitor = args.monitor if args.monitor is not None else launch.get("monitor", 0)
+    if not isinstance(monitor, int) or not (0 <= monitor < max(len(screens), 1)):
+        monitor = 0
 
     web_dir = find_web_dir(args.web)
-    app = build_app(hub, controller, web_dir=web_dir)
+    app = build_app(hub, controller, web_dir=web_dir, settings=settings, screens=screens)
 
-    transparent = args.background == "transparent"
+    transparent = hub.config.background.kind == "transparent"
     base = f"http://{args.host}:{args.port}"
     url = f"{base}/?source=ws"
+    settings_url = f"{base}/control.html"
+    info = controller.info()
 
     print("Caption Guru desktop server")
-    print(f"  engine:   {engine_desc}")
+    print(f"  engine:   {'mock (demo)' if args.demo else info['engine'] + ' (' + info['model'] + ')'}")
     print(f"  frontend: {web_dir or '(not built — see / for help)'}")
     print(f"  display:  {url}")
+    print(f"  settings: {settings_url}")
+    print(f"            saved in {settings.path}")
     print(f"  ws:       {base}/ws   history: {base}/history")
 
     if args.no_open:
@@ -153,9 +190,13 @@ def _serve(args: argparse.Namespace) -> None:
         if args.kiosk or not window.webview_available():
             if not args.kiosk:
                 print("  (pywebview not installed — using Chrome kiosk)")
-            proc = window.launch_chrome_kiosk(url, monitor=args.monitor)
+            proc = window.launch_chrome_kiosk(url, monitor=monitor)
             if proc is None:
                 print("  No Chrome found. Open the display URL manually.")
+            if not args.no_settings_window:
+                import webbrowser
+
+                webbrowser.open(settings_url)
             _block_until_interrupt(thread)
             if proc is not None:
                 proc.terminate()
@@ -163,12 +204,37 @@ def _serve(args: argparse.Namespace) -> None:
             window.run_webview(
                 url,
                 fullscreen=not args.windowed,
-                monitor=args.monitor,
+                monitor=monitor,
                 transparent=transparent,
+                settings_url=None if args.no_settings_window else settings_url,
             )
     finally:
+        settings.flush()
         server.should_exit = True
         thread.join(timeout=3.0)
+
+
+def _resolve_launch_options(args: argparse.Namespace, launch: dict) -> dict:
+    """Engine/model/mic: CLI flag, else what was last picked on the settings page."""
+    from .control import installed_engines, list_input_devices
+
+    saved_engine = launch.get("engine")
+    engine = args.engine or saved_engine or "auto"
+    if not args.engine and engine not in installed_engines():
+        print(f"  note: saved engine {engine!r} isn't installed; using auto")
+        engine = "auto"
+
+    model = args.model
+    if model is None and engine == saved_engine:
+        model = launch.get("model")
+
+    mic = args.mic
+    if mic is None and isinstance(launch.get("mic"), int):
+        mic = launch["mic"]
+        if mic not in {d["index"] for d in list_input_devices()}:
+            print(f"  note: saved microphone #{mic} not found; using the default")
+            mic = None
+    return {"engine": engine, "model": model, "mic": mic}
 
 
 def _parse_dictionary(value: Optional[str]) -> list[str]:

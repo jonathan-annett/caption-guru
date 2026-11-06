@@ -54,8 +54,13 @@ def run_webview(
     monitor: int = 0,
     transparent: bool = False,
     title: str = "Live Captions",
+    settings_url: Optional[str] = None,
 ) -> None:
-    """Open the display fullscreen on the chosen monitor. Blocks until closed."""
+    """Open the display fullscreen on the chosen monitor. Blocks until closed.
+
+    With ``settings_url``, also opens a normal window with the settings page,
+    on another monitor when there is one. Closing the display closes both.
+    """
     import webview
 
     kwargs: dict = {
@@ -69,7 +74,23 @@ def run_webview(
     if 0 <= monitor < len(screens):
         kwargs["screen"] = screens[monitor]
 
-    webview.create_window(title, url, **kwargs)
+    display = webview.create_window(title, url, **kwargs)
+
+    if settings_url:
+        skw: dict = {"width": 1180, "height": 860, "min_size": (720, 560)}
+        other = [i for i in range(len(screens)) if i != monitor]
+        if other:
+            skw["screen"] = screens[other[0]]
+        panel = webview.create_window("Caption Guru — Settings", settings_url, **skw)
+
+        def _close_panel() -> None:
+            try:
+                panel.destroy()
+            except Exception:
+                pass
+
+        display.events.closed += _close_panel
+
     webview.start()
 
 

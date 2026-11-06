@@ -16,6 +16,20 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
 - New `StreamingASREngine` interface and `ContinuousStreamer` pipeline alongside
   the existing utterance engines; the Whisper path is unchanged.
 
+**Desktop — settings page**
+- A **Settings window** opens alongside the captions (also at `/control.html`):
+  position, alignment, edge/side margins, lines, size, font, colour, background,
+  with a live preview of the real output; start/stop/clear, custom words,
+  export; and switch microphone, engine or model without restarting the app.
+- Settings are **saved** and reused next launch (CLI flags still override).
+- Display config gains `marginX` / `marginY` safe-area insets (defaults match the
+  old fixed padding).
+
+**Windows installer**
+- `desktop/packaging/windows/install.cmd` installs everything from scratch
+  (Python, Node, the app) for any branch or tag, so beta testers can try
+  unreleased branches. Adds Start Menu / Desktop shortcuts and an uninstaller.
+
 **PWA — caption quality**
 - **Hallucination suppression.** Whisper used to invent text on silence/non-speech
   (repeated symbols like `>>>>`/`[`, or phantom phrases like "I'm sorry"). Now a
