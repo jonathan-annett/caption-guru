@@ -209,7 +209,9 @@ fi
 # ---------------------------------------------------------------- uv + Python
 step "Setting up Python $PYTHON_VERSION (via uv)"
 UV="$TOOLS/uv/uv"
-if [ ! -x "$UV" ]; then
+# Reuse a previous download only if it actually runs (an interrupted older
+# install could have left a half-unpacked copy).
+if ! "$UV" --version >/dev/null 2>&1; then
   case "$PLATFORM-$CPU" in
     mac-arm64) uvt=aarch64-apple-darwin ;;
     mac-x64) uvt=x86_64-apple-darwin ;;
@@ -234,7 +236,7 @@ if command -v node >/dev/null 2>&1; then
 fi
 if [ -z "$NODE_BIN" ]; then
   NODE_DIR="$TOOLS/node"
-  if [ ! -x "$NODE_DIR/bin/node" ]; then
+  if ! { "$NODE_DIR/bin/node" -v >/dev/null 2>&1 && [ -e "$NODE_DIR/bin/corepack" ]; }; then
     base="https://nodejs.org/dist/latest-v$NODE_MAJOR.x"
     os=$( [ "$PLATFORM" = mac ] && echo darwin || echo linux )
     sums="$(curl -fsSL "$base/SHASUMS256.txt")" || die "couldn't reach nodejs.org"

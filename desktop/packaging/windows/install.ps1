@@ -186,7 +186,9 @@ else {
 Step "Setting up Python $PythonVersion (via uv)"
 $UvDir = Join-Path $Tools 'uv'
 $Uv = Join-Path $UvDir 'uv.exe'
-if (-not (Test-Path $Uv)) {
+$uvOk = $false
+if (Test-Path $Uv) { & $Uv --version *> $null; $uvOk = ($LASTEXITCODE -eq 0) }
+if (-not $uvOk) {
     $zip = Join-Path $Downloads 'uv.zip'
     Download 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' $zip
     # Unpack beside it, then swap in, so an interrupted unpack never leaves a
@@ -214,7 +216,8 @@ if ($sysNode) {
 if (-not $NodeExe) {
     $NodeDir = Join-Path $Tools 'node'
     $NodeExe = Join-Path $NodeDir 'node.exe'
-    if (-not (Test-Path $NodeExe)) {
+    $nodeOk = (Test-Path $NodeExe) -and (Test-Path (Join-Path $NodeDir 'corepack.cmd'))
+    if (-not $nodeOk) {
         $base = "https://nodejs.org/dist/latest-v$NodeMajor.x"
         $sums = (Invoke-WebRequest -Uri "$base/SHASUMS256.txt" -UseBasicParsing).Content
         $m = [regex]::Match($sums, '([0-9a-f]{64})\s+(node-v[\d.]+-win-x64\.zip)')
