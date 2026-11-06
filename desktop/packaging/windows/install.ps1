@@ -127,10 +127,10 @@ if (-not $Ref) {
     $choices = @()
     try {
         $branches = GitHubApi 'branches?per_page=50'
-        $tags = GitHubApi 'tags?per_page=5'
+        $tags = GitHubApi 'tags?per_page=6'
         $choices += 'main'
         $choices += ($branches | ForEach-Object { $_.name } | Where-Object { $_ -ne 'main' })
-        $choices += ($tags | ForEach-Object { $_.name })
+        $choices += ($tags | ForEach-Object { $_.name } | Where-Object { $_ -ne 'installer' })
     } catch {
         Warn "Couldn't list branches from GitHub ($($_.Exception.Message)). You can still type one."
         $choices = @('main')
