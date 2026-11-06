@@ -78,7 +78,20 @@ die() { printf '\n\033[31mInstallation failed: %s\033[0m\n' "$*" >&2; exit 1; }
 
 download() { # url out
   info "downloading $1"
-  curl -fL --retry 3 --retry-delay 2 -A caption-guru-installer -sS -o "$2.part" "$1" && mv "$2.part" "$2"
+  # A progress bar when there's a terminal to show it on; give up on a stalled
+  # connection (under 1 KB/s for 45 s) instead of hanging, and retry.
+  local show=-sS
+  [ -t 2 ] && show=-#
+  rm -f "$2.part"
+  curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 --speed-limit 1000 --speed-time 45 \
+    -A caption-guru-installer "$show" -o "$2.part" "$1" && mv "$2.part" "$2"
+}
+
+unpack() { # archive dest-dir: unpack beside it, then swap in, so an interrupted
+  # unpack never leaves a half-installed tool that the next run would skip
+  rm -rf "$2.new" && mkdir -p "$2.new"
+  tar -xzf "$1" -C "$2.new" --strip-components 1
+  rm -rf "$2" && mv "$2.new" "$2"
 }
 
 github_api() { # path -> json on stdout
@@ -204,14 +217,12 @@ if [ ! -x "$UV" ]; then
     linux-x64) uvt=x86_64-unknown-linux-gnu ;;
   esac
   download "https://github.com/astral-sh/uv/releases/latest/download/uv-$uvt.tar.gz" "$DOWNLOADS/uv.tar.gz"
-  rm -rf "$TOOLS/uv" && mkdir -p "$TOOLS/uv"
-  tar -xzf "$DOWNLOADS/uv.tar.gz" -C "$TOOLS/uv" --strip-components 1
+  unpack "$DOWNLOADS/uv.tar.gz" "$TOOLS/uv"
 fi
 # Keep uv's Python + cache inside our folder so uninstall is just "delete the folder".
 export UV_PYTHON_INSTALL_DIR="$TOOLS/python"
 export UV_CACHE_DIR="$INSTALL_DIR/cache/uv"
 export UV_PYTHON_PREFERENCE=only-managed
-export UV_NO_PROGRESS=1
 "$UV" python install "$PYTHON_VERSION"
 
 # ---------------------------------------------------------------- Node.js
@@ -232,8 +243,7 @@ if [ -z "$NODE_BIN" ]; then
     file="${line##* }"; want="${line%% *}"
     download "$base/$file" "$DOWNLOADS/$file"
     [ "$(sha256 "$DOWNLOADS/$file")" = "$want" ] || die "Node.js download checksum mismatch"
-    rm -rf "$NODE_DIR" && mkdir -p "$NODE_DIR"
-    tar -xzf "$DOWNLOADS/$file" -C "$NODE_DIR" --strip-components 1
+    unpack "$DOWNLOADS/$file" "$NODE_DIR"
   fi
   NODE_BIN="$NODE_DIR/bin"
   info "Node $("$NODE_BIN/node" -v)"

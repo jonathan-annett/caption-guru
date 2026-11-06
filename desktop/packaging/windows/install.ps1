@@ -189,13 +189,17 @@ $Uv = Join-Path $UvDir 'uv.exe'
 if (-not (Test-Path $Uv)) {
     $zip = Join-Path $Downloads 'uv.zip'
     Download 'https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip' $zip
+    # Unpack beside it, then swap in, so an interrupted unpack never leaves a
+    # half-written uv.exe that the next run would skip.
+    $uvNew = "$UvDir.new"
+    if (Test-Path $uvNew) { Remove-Item -Recurse -Force $uvNew }
+    Expand-Archive -Path $zip -DestinationPath $uvNew -Force
     if (Test-Path $UvDir) { Remove-Item -Recurse -Force $UvDir }
-    Expand-Archive -Path $zip -DestinationPath $UvDir -Force
+    Move-Item $uvNew $UvDir
 }
 # Keep uv's Python + cache inside our folder so uninstall is just "delete the folder".
 $env:UV_PYTHON_INSTALL_DIR = Join-Path $Tools 'python'
 $env:UV_CACHE_DIR = Join-Path $InstallDir 'cache\uv'
-$env:UV_NO_PROGRESS = '1'
 $env:UV_PYTHON_PREFERENCE = 'only-managed'   # ignore any half-broken system Python
 Run $Uv @('python', 'install', $PythonVersion) $InstallDir
 
