@@ -279,8 +279,16 @@ def test_resolve_model_dir_known_without_download(tmp_path, monkeypatch):
     monkeypatch.setenv("CAPTION_GURU_MODELS", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="not downloaded"):
         resolve_model_dir("nemotron-en-80ms", download=False)
-    (tmp_path / KNOWN_MODELS["nemotron-en-80ms"]).mkdir()
-    assert resolve_model_dir("nemotron-en-80ms", download=False).is_dir()
+    model = tmp_path / KNOWN_MODELS["nemotron-en-80ms"]
+    model.mkdir()
+    # An empty / half-unpacked folder doesn't count as downloaded...
+    with pytest.raises(FileNotFoundError, match="not downloaded"):
+        resolve_model_dir("nemotron-en-80ms", download=False)
+    # ...a complete one does.
+    model.mkdir()
+    for f in ("encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"):
+        (model / f).write_text("x")
+    assert resolve_model_dir("nemotron-en-80ms", download=False) == model
 
 
 def test_resolve_model_dir_downloads_and_extracts(tmp_path, monkeypatch):

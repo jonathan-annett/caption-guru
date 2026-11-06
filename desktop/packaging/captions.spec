@@ -34,6 +34,10 @@ for pkg in [
     "av",
     "mlx",
     "mlx_whisper",
+    # Streaming engine. sherpa-onnx + sherpa-onnx-core both install into
+    # sherpa_onnx/lib (extension + onnxruntime + c-api libs, linked by rpath),
+    # so collect the whole package to keep them side by side.
+    "sherpa_onnx",
     "sounddevice",
     "tokenizers",
     "tiktoken",

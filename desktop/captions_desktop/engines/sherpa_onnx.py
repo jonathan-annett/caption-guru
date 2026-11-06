@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Optional, Sequence
@@ -77,39 +79,111 @@ def resolve_model_dir(model: str, download: bool = True) -> Path:
 
     target = models_cache_dir() / stem
     if target.is_dir():
-        return target
+        try:
+            find_model_files(target)
+            return target
+        except FileNotFoundError:
+            # Left half-unpacked by an older version that was interrupted.
+            print(f"  {target.name} is incomplete; downloading it again.", file=sys.stderr)
+            shutil.rmtree(target, ignore_errors=True)
     if not download:
         raise FileNotFoundError(f"model {model!r} not downloaded (expected {target})")
-    _download_and_extract(RELEASE_BASE + stem + ".tar.bz2", target.parent)
+    _download_and_extract(RELEASE_BASE + stem + ".tar.bz2", target.parent, stem)
     if not target.is_dir():
         raise FileNotFoundError(f"archive for {model!r} did not contain {stem}/")
     return target
 
 
-def _download_and_extract(url: str, dest_dir: Path) -> None:
+# A stalled connection gives up after this long without data (then retries).
+_STALL_TIMEOUT = 30
+_ATTEMPTS = 4
+
+
+def _download_and_extract(url: str, dest_dir: Path, stem: str) -> None:
+    """Download (resumable) and unpack so ``dest_dir/stem`` appears all at once.
+
+    The archive is kept as ``<name>.part`` while downloading, so quitting midway
+    and starting again resumes instead of starting over. It is unpacked into a
+    scratch folder and only moved into place when complete, so an interrupted
+    unpack can never look like a finished model.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     name = url.rsplit("/", 1)[-1]
-    print(f"Downloading {name} (one time) ...", file=sys.stderr, flush=True)
-    with tempfile.TemporaryDirectory(dir=dest_dir) as tmp:
-        archive = Path(tmp) / name
-        urllib.request.urlretrieve(url, archive, _progress_hook())
-        print("", file=sys.stderr)
-        with tarfile.open(archive, "r:*") as tar:
-            _safe_extract(tar, dest_dir)
+    part = dest_dir / (name + ".part")
+    print(f"Downloading speech model {name} (one time) ...", file=sys.stderr, flush=True)
+    for attempt in range(1, _ATTEMPTS + 1):
+        try:
+            _fetch_resumable(url, part)
+            break
+        except (OSError, ValueError) as exc:  # URLError/timeouts are OSErrors
+            if attempt == _ATTEMPTS:
+                raise RuntimeError(
+                    f"model download failed ({exc}); press Start to try again - "
+                    "it will resume where it stopped"
+                ) from exc
+            print(f"\n  download interrupted ({exc}); retrying ...", file=sys.stderr, flush=True)
+            time.sleep(2 * attempt)
+
+    print("  Unpacking (about a minute) ...", file=sys.stderr, flush=True)
+    for old in dest_dir.glob("unpack-*"):  # left by an interrupted unpack
+        shutil.rmtree(old, ignore_errors=True)
+    scratch = Path(tempfile.mkdtemp(prefix="unpack-", dir=dest_dir))
+    try:
+        with tarfile.open(part, "r:*") as tar:
+            _safe_extract(tar, scratch)
+        unpacked = scratch / stem
+        if unpacked.is_dir():
+            os.replace(unpacked, dest_dir / stem)
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    part.unlink(missing_ok=True)
+    print("  Model ready.", file=sys.stderr, flush=True)
 
 
-def _progress_hook():
-    last = [-1]
+def _fetch_resumable(url: str, part: Path) -> None:
+    have = part.stat().st_size if part.exists() else 0
+    req = urllib.request.Request(url, headers={"User-Agent": "caption-guru"})
+    if have:
+        req.add_header("Range", f"bytes={have}-")
+    with urllib.request.urlopen(req, timeout=_STALL_TIMEOUT) as resp:
+        if have and getattr(resp, "status", None) != 206:  # range ignored: start over
+            have = 0
+        length = resp.headers.get("Content-Length")
+        total = int(length) + have if length else 0
+        if have:
+            print(f"  resuming at {have / 1e6:.0f} MB", file=sys.stderr, flush=True)
+        report = _Progress(total)
+        with open(part, "ab" if have else "wb") as fh:
+            got = have
+            while True:
+                chunk = resp.read(1 << 16)
+                if not chunk:
+                    break
+                fh.write(chunk)
+                got += len(chunk)
+                report(got)
+    if total and part.stat().st_size < total:
+        raise ValueError("connection closed early")
+    print("", file=sys.stderr, flush=True)
 
-    def hook(blocks: int, block_size: int, total: int) -> None:
-        if total <= 0:
+
+class _Progress:
+    """Prints 'x / y MB (z%)' on one line, at most a few times a second."""
+
+    def __init__(self, total: int) -> None:
+        self.total = total
+        self.last = 0.0
+
+    def __call__(self, got: int) -> None:
+        now = time.monotonic()
+        if now - self.last < 0.5 and got != self.total:
             return
-        pct = min(100, blocks * block_size * 100 // total)
-        if pct // 10 != last[0]:
-            last[0] = pct // 10
-            print(f"  {pct}%", end="", file=sys.stderr, flush=True)
-
-    return hook
+        self.last = now
+        if self.total:
+            msg = f"  {got / 1e6:6.1f} / {self.total / 1e6:.0f} MB ({got * 100 // self.total}%)"
+        else:
+            msg = f"  {got / 1e6:6.1f} MB"
+        print("\r" + msg, end="", file=sys.stderr, flush=True)
 
 
 def _safe_extract(tar: tarfile.TarFile, dest: Path) -> None:

@@ -4,6 +4,21 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
 
 ## Unreleased
 
+**macOS / Linux installer**
+- `install.sh` (on the *installer* release) does what the Windows installer
+  does: branch/tag menu, private Python + Node, builds and installs the app, and
+  a *Caption Guru* launcher folder on the Desktop (plus the Linux app menu).
+- With no Chrome/Chromium/Edge for kiosk mode, the captions now open in the
+  default browser instead of nothing; Windows kiosk mode finds Chrome/Edge in
+  their usual install folders.
+
+**Release builds**
+- The downloadable desktop zips now include the **sherpa-onnx streaming
+  engine** on Windows, macOS (Apple Silicon + Intel) and Linux.
+- New `captions doctor` command reports which engines and components an install
+  can actually load; CI runs it on each frozen bundle so a missing native
+  library fails the build instead of reaching users.
+
 **Desktop — true streaming engine**
 - New **`--engine sherpa-onnx`**: streaming ASR via sherpa-onnx, defaulting to
   NVIDIA **Nemotron Speech Streaming EN 0.6B**. Words appear as they're spoken

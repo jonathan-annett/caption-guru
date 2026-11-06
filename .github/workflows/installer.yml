@@ -1,6 +1,6 @@
 name: windows installer
 
-# Publishes the Windows setup to a fixed "installer" release, so testers always
+# Publishes the Windows setup (and the macOS/Linux install.sh) to a fixed "installer" release, so testers always
 # find it at .../releases/tag/installer (and the direct download link below
 # never changes). The installer itself picks the branch/tag to install, so one
 # copy serves every branch.
@@ -9,7 +9,7 @@ name: windows installer
 on:
   push:
     branches: [main]
-    paths: ["desktop/packaging/windows/**", ".github/workflows/installer.yml"]
+    paths: ["desktop/packaging/windows/**", "desktop/packaging/unix/**", ".github/workflows/installer.yml"]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,8 @@ jobs:
         run: |
           python3 desktop/packaging/windows/build_setup.py dist/CaptionGuru-Setup.cmd
           cp desktop/packaging/windows/install.ps1 desktop/packaging/windows/install.cmd dist/
+          cp desktop/packaging/unix/install.sh dist/
+          bash -n dist/install.sh
 
       - name: Publish to the "installer" release
         env:
@@ -36,4 +38,4 @@ jobs:
           else
             gh release edit installer --notes-file desktop/packaging/windows/RELEASE_NOTES.md
           fi
-          gh release upload installer dist/CaptionGuru-Setup.cmd dist/install.ps1 dist/install.cmd --clobber
+          gh release upload installer dist/CaptionGuru-Setup.cmd dist/install.ps1 dist/install.cmd dist/install.sh --clobber

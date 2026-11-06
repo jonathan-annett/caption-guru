@@ -143,7 +143,7 @@ Build locally:
 ```bash
 pnpm --filter @captions/display build          # from repo root: build the frontend
 cd desktop
-uv pip install -e ".[server,audio,asr,mlx,desktop,package]"
+uv pip install -e ".[server,audio,asr,streaming,mlx,desktop,package]"
 python packaging/build.py                       # -> dist/caption-guru-<target>.zip
 ```
 
@@ -155,6 +155,9 @@ Intel, macOS Apple Silicon, Linux x64):
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
+All platforms include the **sherpa-onnx streaming** engine (`--engine sherpa-onnx`;
+the Nemotron model downloads on first use). Check what a build can load with
+`caption-guru doctor` (CI runs it on every bundle).
 Per platform: macOS arm64 includes the **MLX** GPU backend; Intel mac / Windows
 use faster-whisper; the Linux artifact is server + browser/kiosk (no native
 window). All include the bundled frontend.
