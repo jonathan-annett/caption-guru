@@ -18,13 +18,13 @@ jobs:
         include:
           - os: windows-latest
             target: windows-x64
-            extras: "server,audio,asr,desktop,package"
+            extras: "server,audio,asr,streaming,desktop,package"
           - os: macos-14 # Apple Silicon
             target: macos-arm64
-            extras: "server,audio,asr,mlx,desktop,package"
+            extras: "server,audio,asr,streaming,mlx,desktop,package"
           - os: ubuntu-latest # server + browser/kiosk (no native window)
             target: linux-x64
-            extras: "server,audio,asr,package"
+            extras: "server,audio,asr,streaming,package"
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +47,15 @@ jobs:
 
       - name: Build bundle + zip
         run: python desktop/packaging/build.py --target ${{ matrix.target }}
+
+      # Smoke-test the frozen app: the engines' native libraries must load from
+      # the bundle (a missing .so/.dylib/.dll otherwise only shows up for users).
+      - name: Check the bundle loads its engines
+        shell: bash
+        run: |
+          exe=desktop/dist/bundle/caption-guru/caption-guru
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          "$exe" doctor --require server,faster-whisper,sherpa-onnx
 
       - uses: actions/upload-artifact@v4
         with:

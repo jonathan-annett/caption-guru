@@ -4,6 +4,13 @@ Notable changes per release. (Format loosely follows Keep a Changelog.)
 
 ## Unreleased
 
+**Release builds**
+- The downloadable desktop zips now include the **sherpa-onnx streaming
+  engine** on Windows, macOS (Apple Silicon + Intel) and Linux.
+- New `captions doctor` command reports which engines and components an install
+  can actually load; CI runs it on each frozen bundle so a missing native
+  library fails the build instead of reaching users.
+
 **Desktop — true streaming engine**
 - New **`--engine sherpa-onnx`**: streaming ASR via sherpa-onnx, defaulting to
   NVIDIA **Nemotron Speech Streaming EN 0.6B**. Words appear as they're spoken

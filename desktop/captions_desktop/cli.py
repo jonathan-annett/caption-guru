@@ -96,9 +96,21 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     )
     serve.add_argument("--bg-color", default=None, help="hex color for solid/chroma")
 
+    doctor = sub.add_parser(
+        "doctor", help="check which engines and components this install can load"
+    )
+    doctor.add_argument(
+        "--require",
+        default="",
+        help="comma-separated components that must load (exit 1 otherwise), "
+        "e.g. sherpa-onnx,faster-whisper",
+    )
+
     args = parser.parse_args(argv)
     if args.cmd == "serve":
         _serve(args)
+    elif args.cmd == "doctor":
+        raise SystemExit(_doctor([r for r in args.require.split(",") if r.strip()]))
 
 
 def _serve(args: argparse.Namespace) -> None:
@@ -235,6 +247,45 @@ def _resolve_launch_options(args: argparse.Namespace, launch: dict) -> dict:
             print(f"  note: saved microphone #{mic} not found; using the default")
             mic = None
     return {"engine": engine, "model": model, "mic": mic}
+
+
+# component -> module to import. Importing loads the native libraries, which
+# is what breaks in a frozen bundle when a package's .so/.dylib/.dll is missing.
+_COMPONENTS = {
+    "server": "uvicorn",
+    "faster-whisper": "faster_whisper",
+    "ctranslate2": "ctranslate2",
+    "sherpa-onnx": "sherpa_onnx",
+    "mlx": "mlx_whisper",
+    "audio": "sounddevice",
+    "window": "webview",
+}
+
+
+def _doctor(require: list[str]) -> int:
+    import importlib
+    import platform
+    import sys
+
+    print("Caption Guru doctor")
+    print(f"  python:   {sys.version.split()[0]} ({platform.system()} {platform.machine()})")
+    print(f"  frozen:   {bool(getattr(sys, 'frozen', False))}")
+    print(f"  frontend: {find_web_dir() or 'NOT FOUND'}")
+    failed = []
+    for name, module in _COMPONENTS.items():
+        try:
+            mod = importlib.import_module(module)
+            version = getattr(mod, "__version__", "")
+            print(f"  ok    {name:15} {version}")
+        except BaseException as exc:  # some native libs raise OSError, not ImportError
+            msg = str(exc).splitlines()[0] if str(exc) else exc.__class__.__name__
+            print(f"  --    {name:15} {msg}")
+            failed.append(name)
+    missing = [r for r in require if r not in _COMPONENTS or r in failed]
+    if missing:
+        print(f"  REQUIRED BUT NOT LOADABLE: {', '.join(missing)}")
+        return 1
+    return 0
 
 
 def _parse_dictionary(value: Optional[str]) -> list[str]:
