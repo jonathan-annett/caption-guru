@@ -43,7 +43,7 @@
   style:--cap-transform={store.config.uppercase ? "uppercase" : "none"}
 >
   <div class="captions">
-    {#each store.lines as line (line.text + line.partial)}
+    {#each store.lines as line (line.key)}
       <div class="line" class:partial={line.partial}>{line.text}</div>
     {/each}
   </div>
