@@ -158,7 +158,7 @@
           </span>
         </div>
         <div class="transcript">
-          {#each client.finals.slice(-8) as seg (seg.id)}
+          {#each client.finals.slice(-8) as seg, i (seg.id + ':' + i)}
             <p>{seg.text}</p>
           {/each}
           {#if client.partial}<p class="partial">{client.partial.text}</p>{/if}

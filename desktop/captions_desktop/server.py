@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from .export import export_transcript
 from .hub import CaptionHub
 from .protocol import (
+    ConfigMessage,
     ControlCommand,
     HistoryMessage,
     RequestHistoryMessage,
@@ -155,7 +156,16 @@ def build_app(
             try:
                 while True:
                     data = await sock.receive_text()
-                    _handle_client(hub, controller, data, q, set_dictionary)
+                    try:
+                        _handle_client(hub, controller, data, q, set_dictionary)
+                    except Exception as exc:
+                        # A rejected change (e.g. an out-of-range value) must not
+                        # drop the connection; resync this client instead.
+                        print(f"  ignored control message: {exc.__class__.__name__}: {exc}".splitlines()[0])
+                        try:
+                            q.put_nowait(ConfigMessage(config=hub.config))
+                        except asyncio.QueueFull:
+                            pass
             except WebSocketDisconnect:
                 pass
 

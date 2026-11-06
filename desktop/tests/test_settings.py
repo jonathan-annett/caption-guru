@@ -118,3 +118,17 @@ def test_cli_prefers_flags_then_saved_launch(monkeypatch):
     # A saved engine that's no longer installed falls back to auto; a missing mic to default.
     out = cli._resolve_launch_options(ns(), {"engine": "mlx", "mic": 9})
     assert out == {"engine": "auto", "model": None, "mic": None}
+
+
+def test_rejected_config_keeps_connection_and_resyncs():
+    hub = CaptionHub()
+    app = build_app(hub, MockProducer(hub), web_dir=None, autostart=False)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()  # config
+            ws.receive_json()  # history
+            ws.send_json({"type": "setConfig", "config": {"marginY": 999}})
+            resync = ws.receive_json()
+            assert resync["type"] == "config" and resync["config"]["marginY"] == 4
+            ws.send_json({"type": "setConfig", "config": {"position": "top"}})
+            assert ws.receive_json()["config"]["position"] == "top"

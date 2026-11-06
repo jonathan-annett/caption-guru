@@ -50,6 +50,7 @@ export class ControlClient {
     ws.onopen = () => {
       this.connected = true;
       this.retryMs = 500;
+      this.flush(); // anything changed while we were reconnecting
       void this.refresh();
     };
     ws.onclose = () => {
@@ -75,7 +76,8 @@ export class ControlClient {
           break;
         case "final":
           if (this.partial?.id === msg.segment.id) this.partial = null;
-          if (msg.segment.text.trim()) this.finals = [...this.finals.slice(-49), msg.segment];
+          if (msg.segment.text.trim())
+            this.finals = [...this.finals.filter((s) => s.id !== msg.segment.id).slice(-49), msg.segment];
           break;
         case "partial":
           if (msg.segment.text.trim()) this.partial = msg.segment;
@@ -99,11 +101,17 @@ export class ControlClient {
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => {
         this.flushTimer = null;
-        const config = this.pending;
-        this.pending = {};
-        this.send({ type: "setConfig", config });
+        this.flush();
       }, 60);
     }
+  }
+
+  private flush(): void {
+    // Only drop pending edits once they've actually gone out.
+    if (!Object.keys(this.pending).length || this.ws?.readyState !== WebSocket.OPEN) return;
+    const config = this.pending;
+    this.pending = {};
+    this.send({ type: "setConfig", config });
   }
 
   command(command: "start" | "stop" | "clear"): void {
