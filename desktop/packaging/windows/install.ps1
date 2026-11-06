@@ -10,8 +10,9 @@
   Microsoft VC++ runtime / WebView2 installers if your PC is missing them.
 
   Usage:
-    Double-click install.cmd, or in PowerShell:
-      irm https://raw.githubusercontent.com/jonathan-annett/caption-guru/main/desktop/packaging/windows/install.ps1 | iex
+    Download CaptionGuru-Setup.cmd from
+      https://github.com/jonathan-annett/caption-guru/releases/tag/installer
+    and double-click it (or double-click install.cmd next to this file).
     Non-interactive:
       .\install.ps1 -Ref feat/sherpa-onnx-streaming -Yes
     Environment overrides: CAPTION_GURU_REF, CAPTION_GURU_HOME
@@ -313,7 +314,7 @@ if errorlevel 1 (
 $Uninst = Join-Path $InstallDir 'Uninstall Caption Guru.cmd'
 $SelfCopy = Join-Path $InstallDir 'install.ps1'
 if ($PSCommandPath) { Copy-Item -Force $PSCommandPath $SelfCopy }
-else { Download "https://raw.githubusercontent.com/$Owner/$Repo/main/desktop/packaging/windows/install.ps1" $SelfCopy }
+else { Download "https://github.com/$Owner/$Repo/releases/download/installer/install.ps1" $SelfCopy }
 @"
 @echo off
 cd /d "%TEMP%"
