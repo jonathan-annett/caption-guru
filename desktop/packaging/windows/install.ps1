@@ -39,6 +39,7 @@ $Venv = Join-Path $InstallDir 'venv'
 $Downloads = Join-Path $InstallDir 'downloads'
 $StartMenu = Join-Path ([Environment]::GetFolderPath('Programs')) 'Caption Guru'
 $DesktopDir = [Environment]::GetFolderPath('Desktop')
+$DesktopFolder = Join-Path $DesktopDir 'Caption Guru'
 
 function Step($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan }
 function Info($msg) { Write-Host "    $msg" }
@@ -97,6 +98,11 @@ function New-Shortcut($path, $target, $arguments, $workdir, $description) {
 function Remove-Shortcuts {
     if (Test-Path $StartMenu) { Remove-Item -Recurse -Force $StartMenu }
     Get-ChildItem $DesktopDir -Filter 'Caption Guru*.lnk' -ErrorAction SilentlyContinue | Remove-Item -Force
+    # Only remove our own shortcuts from the Desktop folder, never anything the user put there.
+    if (Test-Path $DesktopFolder) {
+        Get-ChildItem $DesktopFolder -Include '*.lnk', '*.url' -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force
+        if (-not (Get-ChildItem $DesktopFolder -Force -ErrorAction SilentlyContinue)) { Remove-Item -Force $DesktopFolder }
+    }
 }
 
 # ---------------------------------------------------------------- uninstall
@@ -319,16 +325,15 @@ pause
 Remove-Shortcuts
 New-Item -ItemType Directory -Force -Path $StartMenu | Out-Null
 $cmdExe = "$env:SystemRoot\System32\cmd.exe"
-function Add-Launcher($name, $extraArgs, $desc, [switch]$OnDesktop) {
+function Add-Launcher($name, $extraArgs, $desc) {
     $a = "/c `"`"$Launch`" $extraArgs`""
     New-Shortcut (Join-Path $StartMenu "$name.lnk") $cmdExe $a $InstallDir $desc
-    if ($OnDesktop) { New-Shortcut (Join-Path $DesktopDir "$name.lnk") $cmdExe $a $InstallDir $desc }
 }
-Add-Launcher 'Caption Guru' '' "Live captions ($Ref)" -OnDesktop
+Add-Launcher 'Caption Guru' '' "Live captions ($Ref)"
 Add-Launcher 'Caption Guru (windowed)' '--windowed' 'Live captions in a window'
 Add-Launcher 'Caption Guru (demo - no mic)' '--demo --windowed' 'Scripted captions for testing the display'
 if ($HasStreaming) {
-    Add-Launcher 'Caption Guru (streaming - Nemotron)' '--engine sherpa-onnx' 'True word-by-word streaming engine (first run downloads ~460 MB)' -OnDesktop
+    Add-Launcher 'Caption Guru (streaming - Nemotron)' '--engine sherpa-onnx' 'True word-by-word streaming engine (first run downloads ~460 MB)'
 }
 # Settings page (only works while Caption Guru is running; it also opens its own
 # settings window on launch). Only for versions that ship the page.
@@ -338,11 +343,18 @@ if (Test-Path (Join-Path $WebDir 'control.html')) {
 }
 New-Shortcut (Join-Path $StartMenu 'Uninstall Caption Guru.lnk') $cmdExe "/c `"`"$Uninst`"`"" $env:TEMP 'Remove Caption Guru'
 
+# The same shortcuts in a 'Caption Guru' folder on the Desktop.
+New-Item -ItemType Directory -Force -Path $DesktopFolder | Out-Null
+Copy-Item -Force (Join-Path $StartMenu '*') $DesktopFolder
+
 # ---------------------------------------------------------------- done
 Step "Done!"
 Info "Installed $Ref ($short) into $InstallDir"
-Info "Start it from the 'Caption Guru' shortcut on your Desktop or Start Menu."
+Info "All the shortcuts are in the 'Caption Guru' folder on your Desktop (and the Start Menu)."
 if ($HasStreaming) { Info "This version includes the streaming engine: use 'Caption Guru (streaming - Nemotron)'." }
 if (Test-Path (Join-Path $WebDir 'control.html')) { Info "A Settings window opens alongside the captions (or use 'Caption Guru Settings' while it runs)." }
 Info "The first run downloads a speech model, so give it a minute."
 Info "To try another branch later, just run the installer again."
+
+# Show the shortcuts folder.
+try { Start-Process explorer.exe -ArgumentList "`"$DesktopFolder`"" } catch { }
