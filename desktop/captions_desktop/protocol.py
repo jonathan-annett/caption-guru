@@ -84,6 +84,10 @@ class DisplayConfig(_Model):
     mode: Literal["rolling", "scroll"]
     show_partial: bool
     uppercase: bool
+    # Safe-area insets: horizontal in viewport-width units (vw), vertical in
+    # viewport-height units (vh). Older configs without them get the defaults.
+    margin_x: float = Field(default=6.0, ge=0, le=45)
+    margin_y: float = Field(default=4.0, ge=0, le=45)
 
 
 DEFAULT_DISPLAY_CONFIG = DisplayConfig(

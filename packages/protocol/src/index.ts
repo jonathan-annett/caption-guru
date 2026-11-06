@@ -80,6 +80,10 @@ export const DisplayConfigSchema = z.object({
   /** show the live (un-finalized) hypothesis in a dimmed style */
   showPartial: z.boolean(),
   uppercase: z.boolean(),
+  /** horizontal safe-area inset, viewport-width units (vw) */
+  marginX: z.number().min(0).max(45).default(6),
+  /** vertical safe-area inset (distance from top/bottom edge), vh */
+  marginY: z.number().min(0).max(45).default(4),
 });
 export type DisplayConfig = z.infer<typeof DisplayConfigSchema>;
 
@@ -96,6 +100,8 @@ export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
   mode: "rolling",
   showPartial: true,
   uppercase: false,
+  marginX: 6,
+  marginY: 4,
 };
 
 // ---------------------------------------------------------------------------

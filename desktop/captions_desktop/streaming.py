@@ -59,6 +59,7 @@ class MockProducer:
         if self._task:
             self._task.cancel()
             self._task = None
+            self.hub.emit_status(EngineStatus(state="idle"))
 
     def set_dictionary(self, terms: list[str]) -> None:
         pass

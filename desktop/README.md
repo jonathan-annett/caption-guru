@@ -74,6 +74,28 @@ stream over `/ws`; the history/scrollback substrate is at `/history`.
 > pywebview is needed for the fullscreen window (`pip install -e ".[desktop]"`).
 > Without it, `serve` automatically falls back to Chrome kiosk.
 
+## Settings page
+
+`serve` opens a **Settings** window next to the captions (on another monitor
+when there is one; `--no-settings-window` to skip it). It's also at
+`http://127.0.0.1:8765/control.html` while the app runs. From there you can:
+
+- **Position & look:** top / middle / bottom, alignment, distance from the edge,
+  side margins, number of captions on screen, size, font, colour, ALL CAPS,
+  live (partial) words, and the background (solid, chroma key, transparent),
+  with a live preview of the actual output.
+- **Captions:** start / stop / clear, custom words, transcript export.
+- **Engine:** microphone, engine and model; *Apply* restarts captioning with the
+  new choice without restarting the app.
+- **Output:** which monitor the captions go on (next launch).
+
+Everything is saved automatically (`%APPDATA%\CaptionGuru\settings.json` on
+Windows, `~/Library/Application Support/CaptionGuru/` on macOS,
+`~/.config/caption-guru/` on Linux; override with `--settings` or
+`$CAPTION_GURU_SETTINGS`) and used next launch. Command-line flags still win
+for that run, e.g. `--engine`, `--mic`, `--monitor`, `--background`,
+`--dictionary`; `--fresh` ignores saved settings.
+
 ## Streaming engine (sherpa-onnx + Nemotron)
 
 `--engine sherpa-onnx` runs a **true streaming** model, by default NVIDIA's
