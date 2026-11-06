@@ -19,7 +19,7 @@ jobs:
           - os: windows-latest
             target: windows-x64
             extras: "server,audio,asr,streaming,desktop,package"
-          - os: macos-14 # Apple Silicon
+          - os: macos-15 # Apple Silicon (macos-14 retired 2026-11-02)
             target: macos-arm64
             extras: "server,audio,asr,streaming,mlx,desktop,package"
           - os: ubuntu-latest # server + browser/kiosk (no native window)

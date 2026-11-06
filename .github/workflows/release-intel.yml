@@ -1,6 +1,6 @@
 name: release-intel
 
-# macOS Intel is split out because macos-13 (Intel) runners are scarce/being
+# macOS Intel is split out because Intel runners (now macos-15-intel) are scarce/being
 # deprecated and were blocking the main release. Tag `vX.Y.Z-intel` to build +
 # publish the Intel bundle to its own release, on its own schedule.
 on:
@@ -14,7 +14,7 @@ permissions:
 jobs:
   build:
     name: build macos-intel
-    runs-on: macos-13
+    runs-on: macos-15-intel # macos-13 retired; Intel runners end with macOS 15 (fall 2027)
     steps:
       - uses: actions/checkout@v4
 
